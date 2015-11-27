@@ -4,9 +4,14 @@
 #include <math.h>
 #include "tabla.c"
 
+//Usado solo para revision de errores
+#define YYDEBUG 1
+
 //-- Lexer prototype required by bison, aka getNextToken()
 int yylex(); 
 int yyerror(const char *mensaje) { printf("Error sintactico: %s\n",mensaje);}
+
+
 %}
 
 
@@ -20,7 +25,6 @@ int yyerror(const char *mensaje) { printf("Error sintactico: %s\n",mensaje);}
 
 %token FINDELINEA
 
-%token <tipo> DEFDIGITO
 %token <tipo> DEFENTERO
 %token <tipo> DEFFLOTANTE
 %token <tipo> DEFCHAR
@@ -47,68 +51,144 @@ int yyerror(const char *mensaje) { printf("Error sintactico: %s\n",mensaje);}
 %token AND
 %token OR
 
+
 %token MAIN
 %token IF
-%token ELSE
+%right ELSE
 %token FOR
 %token WHILE
-%token CARACTER
+%token <variable>CARACTER
 %token BOOLEANO
 %token <variable>VARIABLE
-%token STRING
+%token <variable>STRING
 
-
-%token <numero> DIGITO
 %token <numero> ENTERO
 %token <flotante> FLOTANTE
 
 
-%type <numero> expresion termino factor
+%type <flotante> expresionFloat termino factor sumaMixta restaMixta multiplicacionMixta divisionMixta expresionMixta
+ 
+%type <numero> expresionEntera terminoEntero factorEntero
 
 %%
 
 programa: MAIN LLAVEABRE cuerpo LLAVECIERRA;
 
-cuerpo: sentencia FINDELINEA cuerpo | sentencia FINDELINEA
+cuerpo: sentencia cuerpo | sentencia
 
-sentencia: declaracion| asignacion | expresion
+sentencia: declaracion| asignacion | expresionFloat | expresionEntera | sumaMixta | restaMixta | sentencia_if | sentencia_while
 
-asignacion: VARIABLE IGUAL expresion {if(!existe($1)){yyerror("Variable no definida.");}}
-			| VARIABLE IGUAL VARIABLE {if(!existe($1)|| !existe($3)){yyerror("Variable no definida.");}}
+operacion: OPSUMA
+           | OPMENOS
+           | OPMULT
+           | OPDIV
 
-declaracion: 	 DEFDIGITO       VARIABLE    {if(!existe($2)){agregar (  $1, $2);}else{yyerror("La variable definida ya existe.");}}
-		|DEFENTERO       VARIABLE    {if(!existe($2)){agregar (  $1, $2);}else{yyerror("La variable definida ya existe.");}}
-	      	|DEFFLOTANTE     VARIABLE    {if(!existe($2)){agregar (  $1, $2);}else{yyerror("La variable definida ya existe.");}}
-	        |DEFCHAR         VARIABLE    {if(!existe($2)){agregar (  $1, $2);}else{yyerror("La variable definida ya existe.");}}
-	        |DEFCONSTANTE    VARIABLE    {if(!existe($2)){agregar (  $1, $2);}else{yyerror("La variable definida ya existe.");}}
-	        |DEFSTRING       VARIABLE    {if(!existe($2)){agregar (  $1, $2);}else{yyerror("La variable definida ya existe.");}}
-	        |DEFBOOLEANO     VARIABLE    {if(!existe($2)){agregar (  $1, $2);}else{yyerror("La variable definida ya existe.");}}
-	      	
-expresion: expresion OPSUMA termino { $$ = $1 + $3;}
-	   | expresion OPMENOS termino { $$ = $1 - $3;}
-	   | termino  { $$ = $1;}
+asignacion: VARIABLE IGUAL expresionFloat FINDELINEA {comprobarExistencia($1);comprobarFlotante($1);}
+            | VARIABLE IGUAL expresionMixta FINDELINEA{comprobarExistencia($1);comprobarFlotante($1);}
+            | VARIABLE IGUAL expresionEntera FINDELINEA{comprobarExistencia($1);comprobarEntero($1);}
+            | VARIABLE IGUAL VARIABLE FINDELINEA {if(!existe($1)|| !existe($3)){yyerror("Variable no definida.");}compararTipos($1,$3);}
+            | VARIABLE IGUAL VARIABLE operacion VARIABLE FINDELINEA {if(!existe($1)|| !existe($3)|| !existe($5)){yyerror("Variable no definida.");}compararTipos($1,$3);compararTipos($1,$5);comprobarVariasVariables($1,$3,$5);}
+            | VARIABLE IGUAL CARACTER FINDELINEA {comprobarExistencia($1);comprobarCaracter($1);}
+            | VARIABLE IGUAL STRING   FINDELINEA {comprobarExistencia($1);comprobarString($1);}
+            | VARIABLE IGUAL BOOLEANO FINDELINEA {comprobarExistencia($1);comprobarBoolean($1);}
 
+declaracion: DEFENTERO        VARIABLE  FINDELINEA  {if(!existe($2)){agregar (  $1, $2);}else{yyerror("La variable definida ya existe.");}}
+             |DEFFLOTANTE     VARIABLE  FINDELINEA  {if(!existe($2)){agregar (  $1, $2);}else{yyerror("La variable definida ya existe.");}}
+             |DEFCHAR         VARIABLE  FINDELINEA  {if(!existe($2)){agregar (  $1, $2);}else{yyerror("La variable definida ya existe.");}}
+             |DEFCONSTANTE    VARIABLE  FINDELINEA  {if(!existe($2)){agregar (  $1, $2);}else{yyerror("La variable definida ya existe.");}}
+             |DEFSTRING       VARIABLE   FINDELINEA {if(!existe($2)){agregar (  $1, $2);}else{yyerror("La variable definida ya existe.");}}
+             |DEFBOOLEANO     VARIABLE   FINDELINEA {if(!existe($2)){agregar (  $1, $2);}else{yyerror("La variable definida ya existe.");}}
+                        
+expresionFloat: expresionFloat OPSUMA termino { $$ = $1 + $3;}
+       | expresionFloat OPMENOS termino { $$ = $1 - $3;}
+       | termino  { $$ = $1;}   
+
+expresionMixta: sumaMixta {$$ = $1;}
+                | restaMixta {$$ = $1;}
+                | multiplicacionMixta {$$ = $1;}
+                | divisionMixta {$$ = $1;}
+       
+sumaMixta: expresionEntera  OPSUMA expresionFloat {$$ = $1 + $3;}
+           | expresionFloat OPSUMA expresionEntera {$$ = $1 + $3;}                
+
+multiplicacionMixta: termino OPMULT terminoEntero {$$ = $1*$3;}
+                    | terminoEntero OPMULT termino {$$ = $1*$3;}
+ 
+divisionMixta:  termino OPDIV terminoEntero {$$ = $1/$3;}
+                | terminoEntero OPDIV termino {$$ = $1/$3;}     
+                
+restaMixta: expresionEntera OPMENOS expresionFloat {$$ = $1 - $3;}
+            | expresionFloat OPMENOS expresionEntera {$$ = $1 - $3;}        
+                                                   
+                   
 termino: termino OPMULT factor {$$ = $1*$3;}
-	 | termino OPDIV factor {$$ = $1/$3;}
-	 | factor  { $$ = $1;}
+     | termino OPDIV factor {$$ = $1/$3;}
+     | factor  { $$ = $1;} 
+     
+factor: FLOTANTE {$$ = $1;}
+        |PAR_ABRE expresionFloat PAR_CIERRA { $$ = $2;}
 
-factor: DIGITO {$$ = $1;}
-		|ENTERO   {$$ = $1;}
-		|FLOTANTE  {$$ = $1;}
-        |PAR_ABRE expresion PAR_CIERRA { $$ = $2;}
+expresionEntera: expresionEntera OPSUMA terminoEntero {$$ = $1 + $3;}
+                | expresionEntera OPMENOS terminoEntero { $$ = $1 - $3;}
+                | terminoEntero  { $$ = $1;}
+ 
+terminoEntero: terminoEntero OPMULT factorEntero {$$ = $1*$3;} 
+     | terminoEntero OPDIV factorEntero {$$ = $1/$3;}
+     | factorEntero  { $$ = $1;} 
 
+factorEntero: ENTERO{$$ = $1;}
+              |PAR_ABRE expresionEntera PAR_CIERRA { $$ = $2;}    
+ 
+sentencia_if:   IF PAR_ABRE condicion PAR_CIERRA LLAVEABRE cuerpo LLAVECIERRA
+                | IF PAR_ABRE condicion PAR_CIERRA LLAVEABRE cuerpo LLAVECIERRA ELSE LLAVEABRE cuerpo LLAVECIERRA
+                
+sentencia_while:
+                 WHILE PAR_ABRE condicion PAR_CIERRA LLAVEABRE cuerpo LLAVECIERRA
+                
+expresion: expresionEntera
+           | expresionFloat
+           | expresionMixta
 
-
-
-
-
-	  
+condicion:      expresion AND expresion
+                | expresion OR expresion
+                | expresion DISTINTO expresion
+                | expresion COMPIGUAL expresion
+                | expresion MAYOR expresion
+                | expresion MENOR expresion
+                | expresion MAYORIGUAL expresion
+                | expresion MENORIGUAL expresion
+                | expresion AND VARIABLE
+                | expresion OR VARIABLE
+                | expresion DISTINTO VARIABLE
+                | expresion COMPIGUAL VARIABLE
+                | expresion MAYOR VARIABLE
+                | expresion MENOR VARIABLE
+                | expresion MAYORIGUAL VARIABLE
+                | expresion MENORIGUAL VARIABLE
+                | VARIABLE AND expresion
+                | VARIABLE OR expresion
+                | VARIABLE DISTINTO expresion
+                | VARIABLE COMPIGUAL expresion
+                | VARIABLE MAYOR expresion
+                | VARIABLE MENOR expresion
+                | VARIABLE MAYORIGUAL expresion
+                | VARIABLE MENORIGUAL expresion
+                | VARIABLE AND VARIABLE
+                | VARIABLE OR VARIABLE
+                | VARIABLE DISTINTO VARIABLE
+                | VARIABLE COMPIGUAL VARIABLE
+                | VARIABLE MAYOR VARIABLE
+                | VARIABLE MENOR VARIABLE
+                | VARIABLE MAYORIGUAL VARIABLE
+                | VARIABLE MENORIGUAL VARIABLE              
+                ;
+                
 %%
 
 int main (){
-	
-	yyparse ();
-	imprimirTabla();
-	return 0;
+    
+    yyparse ();
+    imprimirTabla();
+    return 0;
 
 }
